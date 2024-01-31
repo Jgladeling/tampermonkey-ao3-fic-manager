@@ -75,17 +75,54 @@ const bookmarkHelperMarkPrivate = true;
 ///////////////////////////////////////////////////////////////////////////////
 
 function getFicDetails() {
-    // Use regex to capture id from pathname which looks like /works/id/chapters/chapterId
-    const idMatch = window.location.pathname.match(/\/works\/(\d+)\/chapters\/(\d+)/);
+    // Use regex to capture id(s) from pathname which looks like:
+    //   * /works/123                  <- 1 capture groups: idMatch[1] (123)    - These are for fics with NO chapters
+    //   * /works/123/chapters/456     <- 2 capture groups: idMatch[1] (123)    - These are for fics with chapters
+    //                                                      idMatch[2] (456)
+    // See https://regex101.com/ for help with these
+    const idMatch = window.location.pathname.match(/\/works\/(\d+)(?:\/chapters\/(\d+))?/);
     if (idMatch == null) {
         console.log("Unable to parse fic details");
         return null;
     }
 
     const id = idMatch[1];
-    const chapterId = idMatch[2];
+    const chapterId = idMatch[2];  // This will be null if a fic with NO chapters
 
     const title = document.getElementsByClassName("title heading")[0].innerText;
+
+    ///////////////////////////////////
+    // Notes on next section
+    ///////////////////////////////////
+    //
+    //     Fics are well formed and have nice tags on them that enable directly querying for them
+    //     The tags are generally as follows:
+    //         <dt class="rating tags"> Rating: </dt>
+    //         <dd class="rating tags">Mature</dd>
+    //     The <dd ...> one can be fetched and the innerText (Mature) grabbed
+    //
+    //     For sections which have multiple possible values:
+    //         <dd class="relationship tags">
+    //           <ul class="commas">
+    //             <li>
+    //               <a class="tag" href="...">Hermione Granger/Draco Malfoy</a>
+    //             </li>
+    //           </ul>
+    //         </dd>
+    //     The <dd ...> can be fetched and queried for the individual list items (<li>) and the innerText (Hermione Granger/Draco Malfoy) grabbed
+    //
+    //     A little JS magic is used to make these fit on a single line, but it breaks down as such
+    //         1. Get the top level HTML element
+    //         2. Optionally query for sub-elements (if multiple possible)
+    //              ?.querySelectorAll() ?? []    Will run the query if not empty else default to an empty Array
+    //         3. If multiple possible create an Array from all the elements or empty Array
+    //         4. Run a function to get the innerText on each element in the Array
+    //              .map(function (element) { return element.innnerText})
+    //              For example:
+    //                  [ <li>First</li>, <li>Second</li> ].map(...)  =>  [First, Second]
+    //
+    //     Anywhere you see ? means it is possible for it to not be present and that case must be handled
+    //         Use a ternary (google it) to handle if it is present or not
 
     const authors = Array.from(document.querySelectorAll('[rel="author"]')).map(function(auth) { return auth.innerText; });
 
@@ -105,17 +142,19 @@ function getFicDetails() {
 
     const language = document.querySelector('dd.language').innerText;
 
+    // Stats section
     const stats = document.querySelector('dd.stats');
 
     const publishedOn = stats.querySelector('dd.published').innerText;
     const updatedOn = stats.querySelector('dd.status')?.innerText;
-    const words = parseInt(stats.querySelector('dd.words').innerText.replaceAll(/\s|,/g, ""));
+    const words = parseInt(stats.querySelector('dd.words').innerText.replaceAll(/\s|,/g, ""));  // Remove spaces and commas
     const publishedChapters = parseInt(stats.querySelector('dd.chapters').innerText.split('/')[0]);
     const totalChapters = stats.querySelector('dd.chapters').innerText.split('/')[1];
     const numComments = parseInt(stats.querySelector('dd.comments')?.innerText ?? 0);
     const numKudos = parseInt(stats.querySelector('dd.kudos')?.innerText ?? 0);
     const numBookmarks = parseInt(stats.querySelector('dd.bookmarks')?.innerText ?? 0);
     const numHits = parseInt(stats.querySelector('dd.hits').innerText);
+
 
     const summary = document.getElementsByClassName('summary')[0].getElementsByTagName('blockquote')[0].innerText;
 
@@ -151,7 +190,9 @@ function getFicDetails() {
 }
 
 function getSeriesDetails () {
-    // Use regex to capture id from pathname which looks like /series/id
+    // Use regex to capture id(s) from pathname which looks like:
+    //   * /series/123        <- 1 capture groups: idMatch[1] (123)
+    // See https://regex101.com/ for help with these
     const idMatch = window.location.pathname.match(/\/series\/(\d+)/);
     if (idMatch == null) {
         console.log("Unable to parse series details");
@@ -163,6 +204,16 @@ function getSeriesDetails () {
     const title = document.getElementsByTagName("h2")[0].innerHTML.trim();
 
     const creators = Array.from(document.querySelectorAll('[rel="author"]')).map(function(auth) { return auth.innerText; });
+
+    ///////////////////////////////////
+    // Notes on next section
+    ///////////////////////////////////
+    //
+    //     Series are not well formed, basically need to search for the exact section
+    //         Xpaths are not great
+    //
+    //     Anywhere you see ? means it is possible for it to not be present and that case must be handled
+    //         Use a ternary (google it) to handle if it is present or not
 
     const begunOnPath = "//dt[text()='Series Begun::']/following-sibling::dd[1]";
     const begunOn = document.evaluate(begunOnPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue.innerText;
@@ -212,7 +263,7 @@ function getSeriesDetails () {
 ///////////////////////////////////////////////////////////////////////////////
 
 function addAutoComment(details) {
-    // Get random comment
+    // Get random comment from provided comments
     var comment = autoComments[Math.floor(Math.random() * autoComments.length)];
 
     // Append footer if requested
@@ -221,9 +272,15 @@ function addAutoComment(details) {
         comment += "<br></br><sub>Sent with love from the rekudos machine on " + commentDate + "</sub>"
     }
 
-    // Find comment fields
-    const commentField = document.getElementById("comment_content_for_" + details.chapterId);
-    const commentButton = document.getElementById("comment_submit_for_" + details.chapterId);
+    // Find comment fields: chapterId may be null if fic doesn't have chapters
+    var id;
+    if (details.chapterId) {
+        id = details.chapterId;
+    } else {
+        id = details.id;
+    }
+    const commentField = document.getElementById("comment_content_for_" + id);
+    const commentButton = document.getElementById("comment_submit_for_" + id);
 
     // Add comment and submit
     commentField.value = comment;
@@ -234,6 +291,7 @@ function addAutoComment(details) {
 
 
 function registerAutoCommenter(details) {
+    // Get kudo button
     const kudoButton = document.getElementById('new_kudo');
 
     //TODO: What if they have already left kudos and refreshed page?
@@ -272,16 +330,13 @@ function createBookmarkNotes(details) {
     var notes = "";
     switch(details.type) {
         case 'fic':
-            notes = "<details><summary>" + details.type + " Info</summary><b>" + details.title + " by " + details.authors[0] + "</b> (Fic" + details.id + ")"
+            notes = "<details><summary>" + details.type + " Info</summary><b>" + details.title + " by " + details.authors.join(', ') + "</b> (Fic" + details.id + ")"
             notes += "<blockquote>Summary: " + details.summary + "</blockquote>"
             notes += "</details>"
 
-            //notes = "<b><i>" + details.title + "</i></b> by <b>" + details.authors[0] + "</b> (" + details.id + ") <br><br><details><summary>" + details.type + " Info</summary>" + details.relationships + ", " + details.rating + ", " + details.words + details.wip
-            //notes += "<blockquote>" + details.summary + "</blockquote>"
-            //notes += "</details>"
             return notes
         case 'series':
-            notes = "<details><summary>" + details.type + " Info</summary><b>" + details.title + " by " + details.creators[0] + "</b> (Series" + details.id + ")"
+            notes = "<details><summary>" + details.type + " Info</summary><b>" + details.title + " by " + details.creators.join(', ') + "</b> (Series" + details.id + ")"
             if (details.description) {
                 notes += "<blockquote>Description: " + details.description + "</blockquote>"
             }
